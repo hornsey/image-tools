@@ -1,4 +1,84 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+
 export default function RemoveBgPage() {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [resultBlob, setResultBlob] = useState<Blob | null>(null);
+  const [resultUrl, setResultUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      if (resultUrl) URL.revokeObjectURL(resultUrl);
+    };
+  }, [previewUrl, resultUrl]);
+
+  const onChoose = () => fileInputRef.current?.click();
+
+  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    if (!file.type.startsWith("image/")) {
+      setError("仅支持图片文件（JPG/PNG/WebP 等）");
+      return;
+    }
+    setError(null);
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    if (resultUrl) URL.revokeObjectURL(resultUrl);
+    setResultBlob(null);
+    setResultUrl(null);
+    setSelectedFile(file);
+    setPreviewUrl(URL.createObjectURL(file));
+    // 允许重复选择同一文件
+    e.target.value = "";
+  };
+
+  const removeBackground = async () => {
+    if (!selectedFile) return;
+    setIsProcessing(true);
+    setError(null);
+    setResultBlob(null);
+    setResultUrl(null);
+    try {
+      const form = new FormData();
+      form.append("image_file", selectedFile);
+      form.append("size", "auto");
+
+      const resp = await fetch("/api/remove-bg", {
+        method: "POST",
+        body: form,
+      });
+
+      if (!resp.ok) {
+        const maybeJson = await resp.json().catch(() => null);
+        throw new Error(maybeJson?.error || `去背景失败（${resp.status}）`);
+      }
+      const blob = await resp.blob();
+      setResultBlob(blob);
+      setResultUrl(URL.createObjectURL(blob));
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "去背景失败，请重试");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const downloadResult = () => {
+    if (!resultBlob || !resultUrl) return;
+    const a = document.createElement("a");
+    a.href = resultUrl;
+    a.download = "no-bg.png";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-100 dark:from-gray-900 dark:to-gray-800">
       <div className="container mx-auto px-4 py-8">
@@ -27,9 +107,23 @@ export default function RemoveBgPage() {
                   <p className="text-gray-500 dark:text-gray-400 mb-4">
                     支持 JPG、PNG、WebP 格式
                   </p>
-                  <button className="bg-purple-500 hover:bg-purple-600 text-white font-medium py-2 px-6 rounded-lg transition-colors">
-                    选择图片
-                  </button>
+                  <div className="flex items-center justify-center gap-3">
+                    <button onClick={onChoose} className="bg-purple-500 hover:bg-purple-600 text-white font-medium py-2 px-6 rounded-lg transition-colors">
+                      选择图片
+                    </button>
+                    {selectedFile && (
+                      <button onClick={() => { setSelectedFile(null); if (previewUrl) URL.revokeObjectURL(previewUrl); setPreviewUrl(null); if (resultUrl) URL.revokeObjectURL(resultUrl); setResultBlob(null); setResultUrl(null); }} className="bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 font-medium py-2 px-4 rounded-lg transition-colors">
+                        重置
+                      </button>
+                    )}
+                  </div>
+                  <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={onFileChange} />
+                  {previewUrl && (
+                    <div className="mt-6 text-left">
+                      <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">预览</p>
+                      <img src={previewUrl} alt="原图预览" className="w-full h-auto rounded-lg border border-gray-200 dark:border-gray-700" />
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -44,42 +138,33 @@ export default function RemoveBgPage() {
                     处理结果
                   </h3>
                   <p className="text-green-600 dark:text-green-300 mb-4">
-                    背景已去除，可下载透明PNG
+                    {resultUrl ? "背景已去除，可下载透明PNG" : "去除背景后在此显示结果"}
                   </p>
-                  <button className="bg-green-500 hover:bg-green-600 text-white font-medium py-2 px-6 rounded-lg transition-colors">
-                    下载图片
-                  </button>
+                  <div className="flex items-center justify-center gap-3">
+                    <button onClick={removeBackground} disabled={!selectedFile || isProcessing} className="bg-green-600 hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-medium py-2 px-6 rounded-lg transition-colors">
+                      {isProcessing ? "处理中..." : "去除背景"}
+                    </button>
+                    {resultUrl && (
+                      <button onClick={downloadResult} className="bg-green-500 hover:bg-green-600 text-white font-medium py-2 px-6 rounded-lg transition-colors">
+                        下载图片
+                      </button>
+                    )}
+                  </div>
+                  {resultUrl && (
+                    <div className="mt-6 text-left">
+                      <p className="text-sm text-gray-600 dark:text-gray-300 mb-2">结果预览（透明 PNG ）</p>
+                      <img src={resultUrl} alt="去背景结果" className="w-full h-auto rounded-lg border border-green-200 dark:border-green-700" />
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
 
-            <div className="mt-8">
-              <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-6">
-                <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">
-                  高级选项
-                </h3>
-                <div className="grid md:grid-cols-3 gap-4">
-                  <div className="flex items-center">
-                    <input type="checkbox" id="auto-enhance" className="mr-2" defaultChecked />
-                    <label htmlFor="auto-enhance" className="text-sm text-gray-700 dark:text-gray-300">
-                      自动增强边缘
-                    </label>
-                  </div>
-                  <div className="flex items-center">
-                    <input type="checkbox" id="hair-detail" className="mr-2" defaultChecked />
-                    <label htmlFor="hair-detail" className="text-sm text-gray-700 dark:text-gray-300">
-                      头发细节优化
-                    </label>
-                  </div>
-                  <div className="flex items-center">
-                    <input type="checkbox" id="shadow-keep" className="mr-2" />
-                    <label htmlFor="shadow-keep" className="text-sm text-gray-700 dark:text-gray-300">
-                      保留阴影
-                    </label>
-                  </div>
-                </div>
+            {error && (
+              <div className="mt-8 p-3 rounded-lg bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-300 text-sm">
+                {error}
               </div>
-            </div>
+            )}
           </div>
         </div>
       </div>

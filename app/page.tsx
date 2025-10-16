@@ -174,7 +174,7 @@ export default function Home() {
         <div className="container mx-auto px-4 py-8">
           <div className="text-center">
             <p className="text-gray-600 dark:text-gray-300">
-              © 2024 图片处理工具箱. 让图片处理变得简单高效.
+              © 2025 图片处理工具箱. 让图片处理变得简单高效.
             </p>
           </div>
         </div>
